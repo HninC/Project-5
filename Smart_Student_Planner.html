@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Student Planner</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f4f5f7; color: #222; margin: 0; padding: 24px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .sub { color: #666; margin: 0 0 20px; font-size: 14px; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 18px; margin-bottom: 18px; }
+  .card h2 { margin: 0 0 12px; font-size: 17px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 8px; border: 1px solid #bbb; border-radius: 5px; font-size: 14px; }
+  button { background: #222; color: #fff; border: 0; padding: 10px 18px; border-radius: 5px; font-size: 14px; cursor: pointer; margin-top: 14px; }
+  button.secondary { background: #fff; color: #222; border: 1px solid #999; margin-left: 8px; }
+  .error { background: #fdecec; border: 1px solid #e0a0a0; color: #8a1f1f; padding: 10px; border-radius: 5px; margin-top: 12px; font-size: 14px; display: none; }
+  .warn { background: #fff6e0; border: 1px solid #e6c56a; color: #7a5a00; padding: 10px; border-radius: 5px; margin-bottom: 12px; font-size: 14px; }
+  .rec { background: #eef6ee; border: 1px solid #a9cfa9; padding: 12px; border-radius: 5px; margin-bottom: 12px; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e5e5e5; }
+  th { background: #f0f0f0; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold; }
+  .urgent { background: #d33; color: #fff; }
+  .soon { background: #f0b400; color: #222; }
+  .later { background: #cfd8cf; color: #222; }
+  .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .pill { background: #f0f0f0; border-radius: 12px; padding: 4px 12px; font-size: 13px; }
+  .empty { color: #666; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Smart Student Planner</h1>
+  <p class="sub">Enter your assignments and see what to work on first.</p>
+
+  <div class="card">
+    <h2>Add an Assignment</h2>
+    <div class="grid">
+      <div><label for="name">Assignment Name *</label><input id="name" type="text" placeholder="e.g., Math HW 3"></div>
+      <div><label for="course">Course Name *</label><input id="course" type="text" placeholder="e.g., Calc I"></div>
+      <div><label for="due">Due Date *</label><input id="due" type="date"></div>
+      <div><label for="effort">Estimated Effort (hrs) *</label><input id="effort" type="number" step="0.5" placeholder="e.g., 2"></div>
+      <div><label for="status">Status *</label>
+        <select id="status"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
+    </div>
+    <button id="add">Add Assignment</button>
+    <button id="sample" class="secondary">Load Sample Data</button>
+    <button id="clear" class="secondary">Clear All</button>
+    <div id="error" class="error"></div>
+  </div>
+
+  <div class="card">
+    <h2>Weekly Priority List</h2>
+    <div id="output"></div>
+  </div>
+</div>
+
+<script>
+  let assignments = [];
+  let nextId = 1;
+
+  function todayStart() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+  function parseDate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+  function daysLeft(s) { return Math.round((parseDate(s) - todayStart()) / 86400000); }
+  function fmt(s) { return parseDate(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+  function showError(msg) { const e = document.getElementById('error'); e.textContent = msg; e.style.display = 'block'; }
+  function hideError() { document.getElementById('error').style.display = 'none'; }
+  function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function score(a) {
+    const d = Math.max(daysLeft(a.due), 0);
+    let s = 10 / (d + 1) + a.effort * 0.5;
+    if (daysLeft(a.due) <= 2) s += 5;
+    if (a.status === 'In Progress') s += 0.5;
+    return s;
+  }
+
+  function addAssignment() {
+    hideError();
+    const name = document.getElementById('name').value.trim();
+    const course = document.getElementById('course').value.trim();
+    const due = document.getElementById('due').value;
+    const effortRaw = document.getElementById('effort').value;
+    const status = document.getElementById('status').value;
+
+    if (!name || !course || !due || effortRaw === '') {
+      return showError('Please complete all required fields before continuing.');
+    }
+    const effort = parseFloat(effortRaw);
+    if (isNaN(effort) || effort <= 0) return showError('Estimated effort must be greater than zero.');
+    if (daysLeft(due) < 0 && status !== 'Completed') {
+      return showError('This due date has already passed \u2014 please double check the date.');
+    }
+    assignments.push({ id: nextId++, name, course, due, effort, status });
+    ['name','course','due','effort'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('status').value = 'Not Started';
+    render();
+  }
+
+  function changeStatus(id, value) {
+    const a = assignments.find(x => x.id === id);
+    if (a) { a.status = value; render(); }
+  }
+
+  function render() {
+    const out = document.getElementById('output');
+    if (assignments.length === 0) {
+      out.innerHTML = '<p class="empty">Add an assignment to see your weekly priority list.</p>';
+      return;
+    }
+    const active = assignments.filter(a => a.status !== 'Completed')
+                              .sort((a, b) => score(b) - score(a));
+    const counts = { 'Not Started': 0, 'In Progress': 0, 'Completed': 0 };
+    assignments.forEach(a => counts[a.status]++);
+
+    let html = '<div class="summary">' +
+      Object.keys(counts).map(k => '<span class="pill">' + k + ': ' + counts[k] + '</span>').join('') + '</div>';
+
+    // overload warning: 3+ active assignments sharing a due date
+    const byDate = {};
+    active.forEach(a => { byDate[a.due] = (byDate[a.due] || 0) + 1; });
+    const crowded = Object.keys(byDate).filter(d => byDate[d] >= 3);
+    if (crowded.length) {
+      html += '<div class="warn"><b>Heads up:</b> You have several assignments due around the same time (' +
+        crowded.map(fmt).join(', ') + ') \u2014 consider starting early.</div>';
+    }
+
+    if (active.length === 0) {
+      html += '<p class="empty">Nice work \u2014 all assignments are completed.</p>';
+    } else {
+      const top = active[0];
+      html += '<div class="rec"><b>Work on this first:</b> ' + esc(top.name) + ' (' + esc(top.course) + ') \u2014 due ' +
+        fmt(top.due) + ', about ' + top.effort + ' hr' + (top.effort === 1 ? '' : 's') + '.</div>';
+      html += '<table><tr><th>#</th><th>Assignment</th><th>Course</th><th>Due</th><th>Effort</th><th>Priority</th><th>Status</th></tr>';
+      active.forEach((a, i) => {
+        const d = daysLeft(a.due);
+        const tag = d <= 2 ? '<span class="tag urgent">Urgent</span>'
+                  : d <= 7 ? '<span class="tag soon">This week</span>'
+                  : '<span class="tag later">Later</span>';
+        const dl = d < 0 ? 'overdue' : d === 0 ? 'today' : d + ' day' + (d === 1 ? '' : 's');
+        html += '<tr><td>' + (i + 1) + '</td><td>' + esc(a.name) + '</td><td>' + esc(a.course) + '</td><td>' +
+          fmt(a.due) + ' (' + dl + ')</td><td>' + a.effort + (a.effort === 1 ? ' hr' : ' hrs') + '</td><td>' + tag + '</td><td>' +
+          '<select onchange="changeStatus(' + a.id + ', this.value)">' +
+          ['Not Started','In Progress','Completed'].map(s => '<option' + (s === a.status ? ' selected' : '') + '>' + s + '</option>').join('') +
+          '</select></td></tr>';
+      });
+      html += '</table>';
+    }
+    out.innerHTML = html;
+  }
+
+  function addDays(n) {
+    const d = todayStart(); d.setDate(d.getDate() + n);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function loadSample() {
+    hideError();
+    assignments = [
+      { id: nextId++, name: 'Math HW 3', course: 'Calc I', due: addDays(1), effort: 2, status: 'Not Started' },
+      { id: nextId++, name: 'Research Paper', course: 'English', due: addDays(10), effort: 8, status: 'In Progress' },
+      { id: nextId++, name: 'Lab Report', course: 'Biology', due: addDays(4), effort: 3, status: 'Not Started' },
+      { id: nextId++, name: 'Discussion Post', course: 'Psych', due: addDays(3), effort: 1, status: 'Not Started' },
+    ];
+    render();
+  }
+
+  document.getElementById('add').addEventListener('click', addAssignment);
+  document.getElementById('sample').addEventListener('click', loadSample);
+  document.getElementById('clear').addEventListener('click', () => { assignments = []; hideError(); render(); });
+  render();
+</script>
+</body>
+</html>
